@@ -1,4 +1,4 @@
-from app.pdf_service import pdf_to_images
+from app.pdf_service import file_to_images as pdf_to_images
 from app.ocr_service import extract_text_from_images, extract_operations
 
 

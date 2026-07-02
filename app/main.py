@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile
-from app.pdf_service import pdf_to_images
+from app.pdf_service import file_to_images
 from app.ocr_service import extract_text_from_images, extract_operations
-import shutil
 import os
 
 
@@ -18,18 +17,18 @@ def home():
 @app.post("/ocr")
 async def ocr(file: UploadFile):
 
-    path = "temp/input.pdf"
+    os.makedirs("temp", exist_ok=True)
+    ext = os.path.splitext(file.filename)[1] or ".pdf"
+    path = f"temp/input{ext}"
 
     with open(path, "wb") as buffer:
         buffer.write(await file.read())
 
-
-    images = pdf_to_images(path)
+    images = file_to_images(path)
 
     ocr_result = extract_text_from_images(images)
 
     result = extract_operations(ocr_result)
-
 
     return {
         "data": result
