@@ -68,19 +68,6 @@ def _classify_column(x_center, page_width):
     return "libelle"
 
 
-HEADER_FOOTER_PATTERNS = re.compile(
-    r"RELEVE DE COMPTE|LIBELLE|VALEUR|DEBIT|CREDIT|REPORT\b|Total Mouvements|"
-    r"Solde au|Agence|Compte|R\.I\.B\.|NOUS AVONS|EN CAS DE|"
-    r"Devise\s*:|Dirham|EL JADIDA|RUE LIEUTENANT|BP \d+|CASA|"
-    r"saurions|GEMENT|UN ENGAGEMENT",
-    re.IGNORECASE
-)
-
-
-def _is_header_or_footer(text):
-    return bool(HEADER_FOOTER_PATTERNS.search(text)) if text else False
-
-
 def _group_by_rows(items, y_tolerance=15):
 
     enriched = []
@@ -126,16 +113,25 @@ def extract_operations(results):
 
     operations = []
     current = None
-    current_page = -1
 
-    for page_idx, page in enumerate(results):
+    for page in results:
         if not page:
             continue
 
         page_width = max(item["box"][2][0] for item in page)
         rows = _group_by_rows(page, y_tolerance=20)
 
-        for row in rows:
+        header_idx = -1
+        for i, row in enumerate(rows):
+            text = " ".join(item[0]["text"] for item in row).lower()
+            if re.search(r"date", text) and re.search(r"libell[ée]", text):
+                header_idx = i
+                break
+
+        if header_idx < 0:
+            continue
+
+        for row in rows[header_idx + 1:]:
 
             row.sort(key=lambda x: x[1])
 
@@ -169,37 +165,20 @@ def extract_operations(results):
                 else:
                     libelle_parts.append(text)
 
-            libelle_text = " ".join(libelle_parts) if libelle_parts else ""
+            if not date_operation_val:
+                continue
 
-            if date_operation_val:
-                if current and current["libelle"].strip():
-                    operations.append(current)
-                current = {
-                    "date_operation": date_operation_val,
-                    "date_valeur": date_valeur_val,
-                    "libelle": libelle_text,
-                    "debit": debit_val,
-                    "credit": credit_val
-                }
-                current_page = page_idx
-            elif current:
-                if _is_header_or_footer(libelle_text):
-                    continue
+            if current:
+                operations.append(current)
+            current = {
+                "date_operation": date_operation_val,
+                "date_valeur": date_valeur_val,
+                "libelle": " ".join(libelle_parts) if libelle_parts else "",
+                "debit": debit_val,
+                "credit": credit_val
+            }
 
-                if libelle_text:
-                    if current["libelle"]:
-                        current["libelle"] += " " + libelle_text
-                    else:
-                        current["libelle"] = libelle_text
-
-                if debit_val and not current["debit"] and not current["credit"]:
-                    current["debit"] = debit_val
-                if credit_val and not current["credit"] and not current["debit"]:
-                    current["credit"] = credit_val
-                if date_valeur_val and not current["date_valeur"]:
-                    current["date_valeur"] = date_valeur_val
-
-    if current and current["libelle"].strip():
+    if current:
         operations.append(current)
 
     cleaned = []
