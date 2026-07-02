@@ -68,6 +68,19 @@ def _classify_column(x_center, page_width):
     return "libelle"
 
 
+HEADER_FOOTER_PATTERNS = re.compile(
+    r"RELEVE DE COMPTE|LIBELLE|VALEUR|DEBIT|CREDIT|REPORT\b|Total Mouvements|"
+    r"Solde au|Agence|Compte|R\.I\.B\.|NOUS AVONS|EN CAS DE|"
+    r"Devise\s*:|Dirham|EL JADIDA|RUE LIEUTENANT|BP \d+|CASA|"
+    r"saurions|GEMENT|UN ENGAGEMENT",
+    re.IGNORECASE
+)
+
+
+def _is_header_or_footer(text):
+    return bool(HEADER_FOOTER_PATTERNS.search(text)) if text else False
+
+
 def _group_by_rows(items, y_tolerance=15):
 
     enriched = []
@@ -113,8 +126,9 @@ def extract_operations(results):
 
     operations = []
     current = None
+    current_page = -1
 
-    for page in results:
+    for page_idx, page in enumerate(results):
         if not page:
             continue
 
@@ -167,22 +181,20 @@ def extract_operations(results):
                     "debit": debit_val,
                     "credit": credit_val
                 }
+                current_page = page_idx
             elif current:
-                has_amount = bool(debit_val or credit_val)
-                has_header_keywords = bool(re.search(
-                    r"RELEVE DE COMPTE|LIBELLE|VALEUR|DEBIT|CREDIT|REPORT\b|Total Mouvements|Solde au|Agence|Compte|R\.I\.B\.|NOUS AVONS|EN CAS DE",
-                    libelle_text, re.IGNORECASE
-                )) if libelle_text else False
-                if has_header_keywords and not has_amount:
+                if _is_header_or_footer(libelle_text):
                     continue
+
                 if libelle_text:
                     if current["libelle"]:
                         current["libelle"] += " " + libelle_text
                     else:
                         current["libelle"] = libelle_text
-                if debit_val and not current["debit"]:
+
+                if debit_val and not current["debit"] and not current["credit"]:
                     current["debit"] = debit_val
-                if credit_val and not current["credit"]:
+                if credit_val and not current["credit"] and not current["debit"]:
                     current["credit"] = credit_val
                 if date_valeur_val and not current["date_valeur"]:
                     current["date_valeur"] = date_valeur_val
