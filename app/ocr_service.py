@@ -15,7 +15,7 @@ COLUMN_RANGES = [
     ("libelle",        0.12, 0.72),
     ("date_valeur",    0.72, 0.82),
     ("debit",          0.82, 0.92),
-    ("credit",         0.92, 1.00),
+    ("credit",         0.92, 1.01),
 ]
 
 
@@ -167,17 +167,25 @@ def extract_operations(results):
                     "debit": debit_val,
                     "credit": credit_val
                 }
-            elif current and libelle_text:
-                if current["libelle"]:
-                    current["libelle"] += " " + libelle_text
-                else:
-                    current["libelle"] = libelle_text
-
-            elif current and (debit_val or credit_val):
-                if not current["debit"]:
+            elif current:
+                has_amount = bool(debit_val or credit_val)
+                has_header_keywords = bool(re.search(
+                    r"RELEVE DE COMPTE|LIBELLE|VALEUR|DEBIT|CREDIT|REPORT\b|Total Mouvements|Solde au|Agence|Compte|R\.I\.B\.|NOUS AVONS|EN CAS DE",
+                    libelle_text, re.IGNORECASE
+                )) if libelle_text else False
+                if has_header_keywords and not has_amount:
+                    continue
+                if libelle_text:
+                    if current["libelle"]:
+                        current["libelle"] += " " + libelle_text
+                    else:
+                        current["libelle"] = libelle_text
+                if debit_val and not current["debit"]:
                     current["debit"] = debit_val
-                if not current["credit"]:
+                if credit_val and not current["credit"]:
                     current["credit"] = credit_val
+                if date_valeur_val and not current["date_valeur"]:
+                    current["date_valeur"] = date_valeur_val
 
     if current and current["libelle"].strip():
         operations.append(current)
