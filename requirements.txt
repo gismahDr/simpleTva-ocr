@@ -1,9 +1,9 @@
 fastapi
 uvicorn
 python-multipart
+pdf2image
 
 paddleocr==2.7.3
 paddlepaddle==2.6.2
 
-opencv-contrib-python==4.6.0.66
 numpy==1.26.4

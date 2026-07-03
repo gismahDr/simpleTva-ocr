@@ -2,6 +2,8 @@ from pdf2image import convert_from_path
 import os
 import shutil
 
+POPPLER_PATH = os.environ.get("POPPLER_PATH")
+
 
 def _detect_type(path):
     with open(path, "rb") as f:
@@ -33,11 +35,10 @@ def file_to_images(file_path):
     os.makedirs(output_dir, exist_ok=True)
 
     if file_type == "pdf":
-        pages = convert_from_path(
-            file_path,
-            dpi=300,
-            poppler_path=r"E:\Downloads\poppler\Library\bin"
-        )
+        kwargs = {"dpi": 300}
+        if POPPLER_PATH:
+            kwargs["poppler_path"] = POPPLER_PATH
+        pages = convert_from_path(file_path, **kwargs)
         images = []
         for index, page in enumerate(pages):
             image_path = f"{output_dir}/page_{index + 1}.png"
