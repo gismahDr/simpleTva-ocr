@@ -7,18 +7,15 @@ POPPLER_PATH = os.environ.get("POPPLER_PATH")
 
 def _detect_type(path):
     with open(path, "rb") as f:
-        header = f.read(8)
+        header = f.read(12)
     if header[:5] == b"%PDF-":
         return "pdf"
     if header[:4] == b"\x89PNG":
         return "png"
     if header[:2] in (b"\xff\xd8",):
         return "jpg"
-    if header[:4] == b"RIFF":
-        f.seek(8)
-        if f.read(4) == b"WEBP":
-            return "webp"
-        return None
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "webp"
     return None
 
 

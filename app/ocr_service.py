@@ -1,11 +1,19 @@
 from paddleocr import PaddleOCR
 import re
+import threading
 
 
-ocr = PaddleOCR(
-    lang="fr",
-    use_angle_cls=True
-)
+_ocr = None
+_ocr_lock = threading.Lock()
+
+
+def _get_ocr():
+    global _ocr
+    if _ocr is None:
+        with _ocr_lock:
+            if _ocr is None:
+                _ocr = PaddleOCR(lang="fr", use_angle_cls=True)
+    return _ocr
 
 DATE_FULL = re.compile(r"^\d{1,2}/\d{2}/\d{4}$")
 DATE_SHORT = re.compile(r"^\d{1,2}/\d{2}$")
@@ -136,7 +144,7 @@ def extract_text_from_images(images):
 
         print("Analyse :", image)
 
-        result = ocr.ocr(image)
+        result = _get_ocr().ocr(image)
 
         lines = []
 
@@ -157,6 +165,23 @@ def extract_text_from_images(images):
         all_results.append(lines)
 
     return all_results
+
+
+def extract_raw_text(results):
+    all_items = []
+    for page in results:
+        for item in page:
+            box = item["box"]
+            y_center = (box[0][1] + box[2][1]) / 2
+            x_center = (box[0][0] + box[2][0]) / 2
+            text = item["text"].strip()
+            if text:
+                all_items.append((y_center, x_center, text))
+
+    all_items.sort(key=lambda t: (t[0], t[1]))
+
+    lines = [t[2] for t in all_items]
+    return "\n".join(lines)
 
 
 def _normalize_date(t):
@@ -556,3 +581,261 @@ def extract_operations(results, bank=None):
         cleaned.append(op)
 
     return cleaned
+
+
+INVOICE_NUMBER_RE = re.compile(
+    r"(?:facture|invoice|fact\.?|n[o°]|ref|réf|invoice\s*#)\s*[:\s]*(\S+)",
+    re.IGNORECASE,
+)
+INVOICE_DATE_RE = re.compile(
+    r"(?:date\s*(?:de\s*(?:facturation|livraison|émission)?)?|invoice\s*date)\s*[:\s]*",
+    re.IGNORECASE,
+)
+SUPPLIER_KEYWORDS = re.compile(
+    r"(?:fournisseur|vendeur|exp[ée]diteur|supplier|vendor|emettrice?\b)",
+    re.IGNORECASE,
+)
+CLIENT_KEYWORDS = re.compile(
+    r"(?:facture\s+[àa]|livr[ée]\s+[àa]|client|destinataire|bill\s*to|ship\s*to|adresse\s*(?:de\s*)?livraison|acheteur)",
+    re.IGNORECASE,
+)
+ICE_RE = re.compile(r"ICE\s*[:\s]*(\d{15})", re.IGNORECASE)
+RC_RE = re.compile(r"(?:RC|R\.C\.?|Registre\s*Commerce)\s*[:\s]*(\S+)", re.IGNORECASE)
+PATENTE_RE = re.compile(r"(?:patente|Pat\.?)\s*[:\s]*(\S+)", re.IGNORECASE)
+IF_RE = re.compile(r"(?:IF|I\.F\.?|Identifiant\s*Fiscal)\s*[:\s]*(\S+)", re.IGNORECASE)
+CNSS_RE = re.compile(r"(?:CNSS|C\.N\.S\.S\.?)\s*[:\s]*(\S+)", re.IGNORECASE)
+IDENTIFIANTS_RE = [ICE_RE, RC_RE, PATENTE_RE, IF_RE, CNSS_RE]
+IDENT_NAME_MAP = {
+    "ice": "ice", "rc": "rc", "patente": "patente",
+    "if_fiscal": "if_fiscal", "cnss": "cnss",
+}
+IDENT_PAIRS = [
+    (ICE_RE, "ice"), (RC_RE, "rc"), (PATENTE_RE, "patente"),
+    (IF_RE, "if_fiscal"), (CNSS_RE, "cnss"),
+]
+AMOUNT_KEYWORDS = re.compile(
+    r"(?:ht|hors\s*taxes|base\s*imposable|total\s*ht)",
+    re.IGNORECASE,
+)
+TVATX_KEYWORDS = re.compile(
+    r"(?:tva|taxe|vat|t\.v\.a|tvac)",
+    re.IGNORECASE,
+)
+TTC_KEYWORDS = re.compile(
+    r"(?:ttc|net\s*[àa]\s*payer|montant\s*du|total\s*ttc|grand\s*total|amount\s*due)",
+    re.IGNORECASE,
+)
+AMOUNT_VAL_RE = re.compile(
+    r"(\d+(?:[\s\.]\d{3})*(?:[,.]\d{1,2})?)",
+)
+
+
+def _find_amount_near(items_row, keyword_re):
+    for item, x, y in items_row:
+        text = item["text"].strip()
+        if keyword_re.search(text):
+            m = AMOUNT_VAL_RE.search(text)
+            if m:
+                return m.group(1).strip()
+    return ""
+
+
+def _find_all_ident_positions(all_items):
+    found = []
+    for item in all_items:
+        text = item["text"]
+        box = item["box"]
+        y_center = (box[0][1] + box[2][1]) / 2
+        for pat, name in IDENT_PAIRS:
+            m = pat.search(text)
+            if m:
+                val = m.group(1).strip().strip(":")
+                if name == "ice":
+                    val = re.sub(r"\s+", "", val)[:15]
+                found.append({"name": name, "value": val, "y": y_center, "text": text})
+    return found
+
+
+def _get_name_for_ident(all_items, ident_y, page_width, side=None):
+    candidates = []
+    for item in all_items:
+        box = item["box"]
+        y = (box[0][1] + box[2][1]) / 2
+        x = (box[0][0] + box[2][0]) / 2
+        if abs(y - ident_y) > 30:
+            continue
+        txt = item["text"].strip()
+        if any(pat.search(txt) for pat in IDENTIFIANTS_RE):
+            continue
+        if INVOICE_NUMBER_RE.search(txt) or INVOICE_DATE_RE.search(txt):
+            continue
+        if AMOUNT_KEYWORDS.search(txt) or TVATX_KEYWORDS.search(txt) or TTC_KEYWORDS.search(txt):
+            continue
+        if side == "left" and x >= page_width / 2:
+            continue
+        if side == "right" and x < page_width / 2:
+            continue
+        candidates.append((x, txt))
+    candidates.sort(key=lambda c: c[0])
+    return " ".join(t for _, t in candidates[:3])
+
+
+def extract_invoice_data(results):
+    all_items = [item for page in results for item in page]
+    if not all_items:
+        return {"error": "Aucun texte détecté"}
+
+    page_width = max(item["box"][2][0] for item in all_items)
+    rows = _group_by_rows(all_items, y_tolerance=15)
+
+    invoice = {
+        "numero_facture": "",
+        "date_facture": "",
+        "fournisseur": {"nom": "", "ice": "", "rc": "", "patente": "", "if_fiscal": "", "cnss": ""},
+        "client": {"nom": "", "ice": "", "rc": "", "patente": "", "if_fiscal": "", "cnss": ""},
+        "designations": [],
+        "montant_ht": "",
+        "tva": "",
+        "total_ttc": "",
+    }
+
+    for i, row in enumerate(rows):
+        text = " ".join(item[0]["text"] for item in row)
+
+        if INVOICE_NUMBER_RE.search(text) and not invoice["numero_facture"]:
+            m = INVOICE_NUMBER_RE.search(text)
+            if m:
+                invoice["numero_facture"] = m.group(1).strip(": ")
+
+        if INVOICE_DATE_RE.search(text) and not invoice["date_facture"]:
+            for item, x, y in row:
+                d = _normalize_date(item["text"].strip())
+                if d:
+                    invoice["date_facture"] = d
+                    break
+
+    idents = _find_all_ident_positions(all_items)
+    supplier_idents = [i for i in idents if i["y"] < page_width * 0.35]
+    client_idents = [i for i in idents if i["y"] >= page_width * 0.35]
+
+    if not supplier_idents and not client_idents and idents:
+        mid = page_width * 0.35
+        supplier_idents = [i for i in idents if i["y"] < mid]
+        client_idents = [i for i in idents if i["y"] >= mid]
+
+    for ident in supplier_idents:
+        if not invoice["fournisseur"][ident["name"]]:
+            invoice["fournisseur"][ident["name"]] = ident["value"]
+            if not invoice["fournisseur"]["nom"]:
+                invoice["fournisseur"]["nom"] = _get_name_for_ident(
+                    all_items, ident["y"], page_width, side="left"
+                )
+
+    for ident in client_idents:
+        if not invoice["client"][ident["name"]]:
+            invoice["client"][ident["name"]] = ident["value"]
+            if not invoice["client"]["nom"]:
+                invoice["client"]["nom"] = _get_name_for_ident(
+                    all_items, ident["y"], page_width, side="right"
+                )
+
+    if not idents:
+        for i, row in enumerate(rows[:6]):
+            text = " ".join(item[0]["text"] for item in row)
+            if CLIENT_KEYWORDS.search(text):
+                nom, _, _ = _extract_party_block(rows, i, max_above=0, max_below=4)
+                invoice["client"]["nom"] = nom
+                break
+        for i, row in enumerate(rows[:4]):
+            text = " ".join(item[0]["text"] for item in row)
+            if not any(pat.search(text) for pat in IDENTIFIANTS_RE):
+                if not INVOICE_NUMBER_RE.search(text) and not INVOICE_DATE_RE.search(text):
+                    invoice["fournisseur"]["nom"] = " ".join(
+                        item[0]["text"] for item in row
+                    )[:80]
+                    break
+
+    footer_start = len(rows)
+    for i, row in enumerate(rows):
+        text = " ".join(item[0]["text"] for item in row)
+        if TTC_KEYWORDS.search(text):
+            footer_start = i
+            break
+
+    for i, row in enumerate(rows):
+        if i >= footer_start:
+            break
+
+        text = " ".join(item[0]["text"] for item in row)
+
+        if TTC_KEYWORDS.search(text) and not invoice["total_ttc"]:
+            amt = _find_amount_near(row, TTC_KEYWORDS)
+            if amt:
+                invoice["total_ttc"] = amt
+            continue
+
+        if TVATX_KEYWORDS.search(text) and not invoice["tva"]:
+            amt = _find_amount_near(row, TVATX_KEYWORDS)
+            if amt:
+                invoice["tva"] = amt
+            continue
+
+        if AMOUNT_KEYWORDS.search(text) and not invoice["montant_ht"]:
+            amt = _find_amount_near(row, AMOUNT_KEYWORDS)
+            if amt:
+                invoice["montant_ht"] = amt
+            continue
+
+        amounts = AMOUNT_VAL_RE.findall(text)
+        if amounts and len(row) >= 2:
+            desc_parts = []
+            for item, x, y in row:
+                t = item["text"].strip()
+                if not AMOUNT_VAL_RE.match(t):
+                    desc_parts.append(t)
+            if desc_parts:
+                invoice["designations"].append({
+                    "description": " ".join(desc_parts),
+                    "montants": amounts,
+                })
+
+    return invoice
+
+
+def _extract_party_block(rows, anchor_idx, max_above=4, max_below=2):
+    start = max(0, anchor_idx - max_above)
+    end = min(len(rows), anchor_idx + max_below + 1)
+    block_lines = []
+    for i in range(start, end):
+        line = " ".join(item[0]["text"] for item in rows[i])
+        block_lines.append(line)
+    full_text = " | ".join(block_lines)
+    idents = _extract_idents_from_text(full_text)
+    name_lines = []
+    for line in block_lines:
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        if any(pat.search(cleaned) for pat in IDENTIFIANTS_RE):
+            continue
+        if SUPPLIER_KEYWORDS.search(cleaned) or CLIENT_KEYWORDS.search(cleaned):
+            continue
+        if INVOICE_NUMBER_RE.search(cleaned) or INVOICE_DATE_RE.search(cleaned):
+            continue
+        if AMOUNT_KEYWORDS.search(cleaned) or TVATX_KEYWORDS.search(cleaned) or TTC_KEYWORDS.search(cleaned):
+            continue
+        name_lines.append(cleaned)
+    nom = " | ".join(name_lines[:3]) if name_lines else ""
+    return nom, idents
+
+
+def _extract_idents_from_text(text):
+    found = {}
+    for pat, name in IDENT_PAIRS:
+        m = pat.search(text)
+        if m:
+            val = m.group(1).strip().strip(":")
+            if name == "ice":
+                val = re.sub(r"\s+", "", val)[:15]
+            found[name] = val
+    return found

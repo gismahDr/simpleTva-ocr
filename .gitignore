@@ -20,5 +20,14 @@ Thumbs.db
 # VS Code (optionnel)
 .vscode/
 
+# Variables d'environnement
+.env
+
 releve.pdf
 test.png
+fact*.png
+releve*.png
+output*.txt
+debug_ocr.py
+test_facture.py
+test_pdf.py

@@ -2,6 +2,8 @@ fastapi
 uvicorn
 python-multipart
 pdf2image
+openai
+python-dotenv
 
 paddleocr==2.7.3
 paddlepaddle==2.6.2
