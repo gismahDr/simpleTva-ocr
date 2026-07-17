@@ -208,9 +208,15 @@ def extract_invoice_with_ai(raw_text: str) -> dict:
     last_error = None
     for _ in range(len(PROVIDERS)):
         provider = _next_provider()
-        client = provider["client_fn"]()
-        model = provider["model"]
 
+        try:
+            client = provider["client_fn"]()
+        except RuntimeError as e:
+            print(f"[AI] {provider['name']} skip: {e}")
+            last_error = e
+            continue
+
+        model = provider["model"]
         print(f"[AI] Appel via {provider['name']} (model: {model})")
 
         try:
