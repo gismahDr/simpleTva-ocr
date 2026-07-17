@@ -35,13 +35,10 @@ def file_to_images(file_path):
         kwargs = {"dpi": 300}
         if POPPLER_PATH:
             kwargs["poppler_path"] = POPPLER_PATH
-        pages = convert_from_path(file_path, **kwargs)
-        images = []
-        for index, page in enumerate(pages):
-            image_path = f"{output_dir}/page_{index + 1}.png"
-            page.save(image_path, "PNG")
-            images.append(image_path)
-        return images
+        pages = convert_from_path(file_path, first_page=1, last_page=1, **kwargs)
+        image_path = f"{output_dir}/page_1.png"
+        pages[0].save(image_path, "PNG")
+        return [image_path]
     else:
         ext = "png" if file_type == "png" else "jpg"
         dest = f"{output_dir}/page_1.{ext}"

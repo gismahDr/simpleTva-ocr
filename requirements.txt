@@ -4,6 +4,7 @@ python-multipart
 pdf2image
 openai
 python-dotenv
+g4f
 
 paddleocr==2.7.3
 paddlepaddle==2.6.2

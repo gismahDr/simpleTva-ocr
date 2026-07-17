@@ -74,13 +74,13 @@ async def ocr_facture_text(file: UploadFile):
 
 @app.post("/ocr/facture/ai")
 async def ocr_facture_ai(file: UploadFile):
-    from app.ai_service import extract_invoice_with_ai
+    from app.ai_service import extract_invoice_with_ai_delayed
     path = await _save_upload(file)
     try:
         images = file_to_images(path)
         ocr_result = extract_text_from_images(images)
         text = extract_raw_text(ocr_result)
-        result = extract_invoice_with_ai(text)
+        result = extract_invoice_with_ai_delayed(text)
         return {"data": result}
     finally:
         _cleanup()
