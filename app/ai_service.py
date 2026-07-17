@@ -99,16 +99,10 @@ def _get_g4f_groq_client():
     return _G4FWrapper(g4f.Provider.Groq)
 
 
-def _get_g4f_cloudflare_client():
-    import g4f
-    return _G4FWrapper(g4f.Provider.Cloudflare)
-
-
 # ponytail: ordre = cle reelle d'abord, puis fallbacks g4f gratuits.
 PROVIDERS = [
     {"name": "Groq", "client_fn": _get_groq_client, "model": "llama-3.3-70b-versatile"},
     {"name": "G4F-Groq", "client_fn": _get_g4f_groq_client, "model": "llama-3.3-70b-versatile"},
-    {"name": "G4F-Cloudflare", "client_fn": _get_g4f_cloudflare_client, "model": "@cf/meta/llama-3.3-70b-instruct-fp8"},
     {"name": "OpenRouter", "client_fn": _get_openrouter_client, "model": "google/gemma-4-31b-it:free"},
 ]
 
