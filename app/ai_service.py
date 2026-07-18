@@ -14,6 +14,7 @@ _call_lock = threading.Lock()
 _gemini_client = None
 _openrouter_client = None
 _groq_client = None
+_opencode_client = None
 
 
 def _get_gemini_client():
@@ -56,6 +57,20 @@ def _get_groq_client():
             timeout=30.0,
         )
     return _groq_client
+
+
+def _get_opencode_client():
+    global _opencode_client
+    if _opencode_client is None:
+        api_key = os.environ.get("OPENCODE_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENCODE_API_KEY not set")
+        _opencode_client = OpenAI(
+            base_url="https://opencode.ai/zen/v1",
+            api_key=api_key,
+            timeout=30.0,
+        )
+    return _opencode_client
 
 
 # ponytail: wrapper g4f -> meme interface que OpenAI SDK.
@@ -101,6 +116,7 @@ def _get_g4f_groq_client():
 
 # ponytail: ordre = cle reelle d'abord, puis fallbacks g4f gratuits.
 PROVIDERS = [
+    {"name": "OpenCode", "client_fn": _get_opencode_client, "model": "big-pickle"},
     {"name": "Groq", "client_fn": _get_groq_client, "model": "llama-3.3-70b-versatile"},
     {"name": "G4F-Groq", "client_fn": _get_g4f_groq_client, "model": "llama-3.3-70b-versatile"},
     {"name": "OpenRouter", "client_fn": _get_openrouter_client, "model": "google/gemma-4-31b-it:free"},
