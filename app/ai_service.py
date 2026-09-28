@@ -117,8 +117,8 @@ def _get_g4f_groq_client():
 # ponytail: ordre = cle reelle d'abord, puis fallbacks g4f gratuits.
 PROVIDERS = [
     {"name": "OpenCode", "client_fn": _get_opencode_client, "model": "big-pickle"},
-    {"name": "Groq", "client_fn": _get_groq_client, "model": "llama-3.3-70b-versatile"},
-    {"name": "G4F-Groq", "client_fn": _get_g4f_groq_client, "model": "llama-3.3-70b-versatile"},
+    {"name": "Groq", "client_fn": _get_groq_client, "model": "openai/gpt-oss-120b"},
+    {"name": "G4F-Groq", "client_fn": _get_g4f_groq_client, "model": "openai/gpt-oss-120b"},
     {"name": "OpenRouter", "client_fn": _get_openrouter_client, "model": "google/gemma-4-31b-it:free"},
 ]
 
